@@ -23,7 +23,7 @@ st.markdown("""
         color: #e0e0e0;
     }
     
-    /* 2. 标签页(Tabs)样式定制 - 模仿按钮效果 */
+    /* 2. 标签页按钮样式 */
     button[data-baseweb="tab"] {
         background-color: #1a1a1a;
         color: #888;
@@ -32,10 +32,8 @@ st.markdown("""
         border: 1px solid #333;
         padding: 5px 20px;
     }
-    
-    /* 选中状态 */
     button[data-baseweb="tab"][aria-selected="true"] {
-        background-color: #00ff41 !important; /* 选中变绿 */
+        background-color: #00ff41 !important;
         color: #000000 !important;
         border: 1px solid #00ff41 !important;
         font-weight: bold;
@@ -179,13 +177,21 @@ def get_view(minutes):
     
     return df
 
-# ================= 🖥️ 渲染逻辑 =================
+# ================= 🖥️ 渲染逻辑 (关键修复区) =================
 
 st.title("OPINION 热门交易看板")
 
-# 创建 tabs 容器（这就是您要的三个按钮）
-# 它们会横向排列，点击即可切换下方内容
+# 1. 创建 Tabs
 tab1, tab2, tab3 = st.tabs(["⚡ 1 分钟突发", "🌊 10 分钟主力", "💎 30 分钟趋势"])
+
+# 2. 【关键】在 Tabs 内部预先创建“坑位”(Placeholder)
+# 这样我们在循环里只更新这个坑位，就不会出现两个表格了
+with tab1:
+    placeholder_1m = st.empty()
+with tab2:
+    placeholder_10m = st.empty()
+with tab3:
+    placeholder_30m = st.empty()
 
 status_ph = st.empty()
 
@@ -193,14 +199,15 @@ status_ph = st.empty()
 def style_dataframe(df):
     def highlight(val):
         if 'BUY' in val or 'YES' in val:
-            return 'color: #4ade80; font-weight: bold;' # 亮绿
-        return 'color: #f87171; font-weight: bold;'    # 亮红
+            return 'color: #4ade80; font-weight: bold;' 
+        return 'color: #f87171; font-weight: bold;'    
     return df.style.applymap(highlight, subset=['Side']).format({"Total": "${:,.0f}"})
 
-def render_tab_content(minutes, container):
+# 渲染函数：接收 placeholder 而不是 tab
+def render_to_placeholder(minutes, placeholder):
     df = get_view(minutes)
     
-    with container:
+    with placeholder.container():
         if df.empty:
             st.info("正在接收交易数据流...")
         else:
@@ -233,11 +240,10 @@ while True:
     new_data = fetch_raw_data()
     process_data(new_data)
     
-    # 渲染三个标签页的内容
-    # 注意：Streamlit 会自动处理隐藏/显示，我们只需要把数据填进去
-    render_tab_content(1, tab1)
-    render_tab_content(10, tab2)
-    render_tab_content(30, tab3)
+    # 3. 循环中只更新坑位
+    render_to_placeholder(1, placeholder_1m)
+    render_to_placeholder(10, placeholder_10m)
+    render_to_placeholder(30, placeholder_30m)
     
     # 底部状态
     pool_size = len(st.session_state.master_pool)
