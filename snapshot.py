@@ -12,60 +12,68 @@ POLL_INTERVAL = 10       # 刷新间隔
 MAX_HISTORY_MINUTES = 30 # 最大记忆时长
 CACHE_FILE = "opinion_data_pool.csv" 
 
-# ================= 🎨 UI 深度定制 (Alpha123/Matrix 风格) =================
-st.set_page_config(layout="wide", page_title="OPINION MONITOR")
+# ================= 🎨 UI 深度定制 =================
+st.set_page_config(layout="wide", page_title="OPINION 热门监控")
 
 st.markdown("""
 <style>
     /* 1. 全局深色背景 */
     .stApp {
-        background-color: #0e0e0e; /* 极深灰黑 */
+        background-color: #0e0e0e; 
         color: #e0e0e0;
     }
     
-    /* 2. 标题风格 */
-    h3 {
-        color: #00ff41 !important; /* 黑客绿 */
-        border-left: 4px solid #00ff41;
-        padding-left: 12px;
-        font-family: 'Courier New', monospace;
-        letter-spacing: 1px;
-        margin-top: 40px;
+    /* 2. 标签页(Tabs)样式定制 - 模仿按钮效果 */
+    button[data-baseweb="tab"] {
+        background-color: #1a1a1a;
+        color: #888;
+        border-radius: 5px;
+        margin-right: 5px;
+        border: 1px solid #333;
+        padding: 5px 20px;
+    }
+    
+    /* 选中状态 */
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background-color: #00ff41 !important; /* 选中变绿 */
+        color: #000000 !important;
+        border: 1px solid #00ff41 !important;
+        font-weight: bold;
     }
 
-    /* 3. 表格样式覆写 (去除白底，改为深灰卡片) */
+    /* 3. 表格样式 */
     [data-testid="stDataFrame"] {
         background-color: #161616 !important;
         border: 1px solid #333 !important;
         border-radius: 5px;
     }
     
-    /* 4. 强制文字不折叠，自动换行 */
+    /* 4. 强制文字不折叠 */
     div[data-testid="stdataframe-cell-content"] {
         white-space: normal !important;
         line-height: 1.6 !important;
-        padding-top: 10px !important;
-        padding-bottom: 10px !important;
-        color: #cccccc; /* 数据行文字颜色 */
-        font-family: 'Consolas', 'Courier New', monospace;
+        padding: 10px 5px !important;
+        color: #cccccc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
         font-size: 14px;
     }
     
-    /* 表头样式 */
+    /* 表头 */
     [data-testid="stDataFrame"] thead tr th {
         background-color: #1f1f1f !important;
         color: #888888 !important;
-        font-size: 12px !important;
-        text-transform: uppercase;
+        font-size: 13px !important;
+        font-weight: bold;
     }
 
-    /* 5. 状态栏微调 */
+    /* 5. 状态栏 */
     .status-bar {
-        font-family: monospace;
+        font-family: 'Courier New', monospace;
         color: #666;
         font-size: 12px;
         padding: 10px 0;
         border-top: 1px solid #333;
+        margin-top: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -79,7 +87,6 @@ def fetch_raw_data():
     chrome_options.add_argument("--disable-gpu")
     
     driver = webdriver.Chrome(options=chrome_options)
-    # 反爬
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
     })
@@ -135,7 +142,6 @@ if 'master_pool' not in st.session_state:
         except: st.session_state.master_pool = pd.DataFrame()
     else: st.session_state.master_pool = pd.DataFrame()
 
-# 记录开始运行时间，用于判断是否为冷启动
 if 'app_start_time' not in st.session_state:
     st.session_state.app_start_time = datetime.now()
 
@@ -145,7 +151,6 @@ def process_data(new_df):
         pool = pd.concat([pool, new_df])
         pool = pool.drop_duplicates(subset=['unique_key'], keep='last')
     
-    # 清理过期数据
     if not pool.empty:
         pool['ScrapeTime'] = pd.to_datetime(pool['ScrapeTime'])
         cutoff = datetime.now() - timedelta(minutes=MAX_HISTORY_MINUTES)
@@ -164,13 +169,11 @@ def get_view(minutes):
     
     if subset.empty: return pd.DataFrame()
     
-    # 聚合
     df = subset.groupby(['Event', 'Market', 'Side']).agg(
         Count=('unique_key', 'count'),
         Total=('Amount', 'sum')
     ).reset_index()
     
-    # 排序
     df = df.sort_values(by=['Count', 'Total'], ascending=[False, False])
     df.index = range(1, len(df) + 1)
     
@@ -178,15 +181,15 @@ def get_view(minutes):
 
 # ================= 🖥️ 渲染逻辑 =================
 
-st.title("OPINION // CORE")
+st.title("OPINION 热门交易看板")
 
-# 占位符 (竖向堆叠)
-ph_1m = st.empty()
-ph_10m = st.empty()
-ph_30m = st.empty()
+# 创建 tabs 容器（这就是您要的三个按钮）
+# 它们会横向排列，点击即可切换下方内容
+tab1, tab2, tab3 = st.tabs(["⚡ 1 分钟突发", "🌊 10 分钟主力", "💎 30 分钟趋势"])
+
 status_ph = st.empty()
 
-# 样式函数：给 Side 列上色，模仿 Alpha123 的胶囊效果
+# 样式函数
 def style_dataframe(df):
     def highlight(val):
         if 'BUY' in val or 'YES' in val:
@@ -194,34 +197,30 @@ def style_dataframe(df):
         return 'color: #f87171; font-weight: bold;'    # 亮红
     return df.style.applymap(highlight, subset=['Side']).format({"Total": "${:,.0f}"})
 
-def render_table(title, minutes, placeholder):
+def render_tab_content(minutes, container):
     df = get_view(minutes)
     
-    with placeholder.container():
-        st.markdown(f"### ⚡ {title}")
-        
+    with container:
         if df.empty:
-            st.caption("Waiting for data stream...")
+            st.info("正在接收交易数据流...")
         else:
-            # 动态计算高度：(行数 + 表头) * 行高 + 缓冲
-            # 这样可以彻底解决 StreamlitInvalidHeightError 且不留白
             row_height = 35 
             dynamic_height = (len(df) + 1) * row_height + 3
-            if dynamic_height > 800: dynamic_height = 800 # 设置最大上限，超过则滚动
+            if dynamic_height > 800: dynamic_height = 800
             
             max_val = df['Count'].max()
             
             st.dataframe(
                 style_dataframe(df),
-                use_container_width=True, # 撑满宽度，解决折叠问题
-                height=int(dynamic_height),    # 修复报错的关键：使用整数
+                use_container_width=True, 
+                height=int(dynamic_height),    
                 column_config={
-                    "Event": st.column_config.TextColumn("Event", width="large"), # 宽列
-                    "Market": st.column_config.TextColumn("Market", width="medium"),
-                    "Side": st.column_config.TextColumn("Side", width="small"),
-                    "Total": st.column_config.NumberColumn("Vol ($)", format="$%d"),
+                    "Event": st.column_config.TextColumn("事件", width="large"), 
+                    "Market": st.column_config.TextColumn("市场", width="medium"),
+                    "Side": st.column_config.TextColumn("方向", width="small"),
+                    "Total": st.column_config.NumberColumn("成交额 ($)", format="$%d"),
                     "Count": st.column_config.ProgressColumn(
-                        "Freq", 
+                        "热度", 
                         format="%d", 
                         min_value=0, 
                         max_value=int(max_val * 1.2),
@@ -231,29 +230,20 @@ def render_table(title, minutes, placeholder):
 
 # ================= 🔄 LOOP =================
 while True:
-    # 1. 抓取
     new_data = fetch_raw_data()
     process_data(new_data)
     
-    # 2. 计算运行时长
-    uptime = datetime.now() - st.session_state.app_start_time
-    uptime_minutes = int(uptime.total_seconds() / 60)
+    # 渲染三个标签页的内容
+    # 注意：Streamlit 会自动处理隐藏/显示，我们只需要把数据填进去
+    render_tab_content(1, tab1)
+    render_tab_content(10, tab2)
+    render_tab_content(30, tab3)
     
-    # 3. 渲染
-    # 添加提示：如果运行时间不足，说明数据还在积累
-    warmup_msg = ""
-    if uptime_minutes < 10:
-        warmup_msg = f"(System warming up: {uptime_minutes}m/10m - Data may look identical)"
-    
-    render_table("1 MINUTE BURST", 1, ph_1m)
-    render_table(f"10 MINUTES FLOW {warmup_msg}", 10, ph_10m)
-    render_table(f"30 MINUTES TREND {warmup_msg}", 30, ph_30m)
-    
-    # 4. 底部状态
+    # 底部状态
     pool_size = len(st.session_state.master_pool)
     status_ph.markdown(f"""
     <div class='status-bar'>
-    SYSTEM: ONLINE | POOL_SIZE: {pool_size} | LAST_SYNC: {datetime.now().strftime('%H:%M:%S')}
+    系统状态: 在线 | 缓存池记录: {pool_size} | 刷新时间: {datetime.now().strftime('%H:%M:%S')}
     </div>
     """, unsafe_allow_html=True)
     
