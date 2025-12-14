@@ -8,49 +8,81 @@ from selenium.webdriver.common.by import By
 from datetime import datetime, timedelta
 
 # ================= ⚙️ 核心配置 =================
-POLL_INTERVAL = 10       # 扫描频率：10秒 (既快又安全)
-MAX_HISTORY_MINUTES = 30 # 最大记忆时长：30分钟
-CACHE_FILE = "cyberpunk_data_pool.csv" # 本地持久化文件
+POLL_INTERVAL = 10       # 10秒刷新
+MAX_HISTORY_MINUTES = 30 # 数据池保留30分钟
+CACHE_FILE = "matrix_data_pool.csv" 
 
-# ================= 🎨 科技风 UI 注入 =================
-st.set_page_config(layout="wide", page_title="OPINION // CORE MONITOR")
+# ================= 🎨 极客 UI (MATRIX THEME) =================
+st.set_page_config(layout="wide", page_title="OPINION // MATRIX_CORE")
 
-# 注入自定义 CSS (赛博朋克风格)
+# 注入深度 CSS (强制覆盖 Streamlit 原生样式)
 st.markdown("""
 <style>
-    /* 全局背景微调 */
+    /* 1. 全局背景与字体 - 纯黑底色 */
     .stApp {
-        background-color: #0e1117;
+        background-color: #000000;
+        color: #00ff41;
+        font-family: 'Courier New', Courier, monospace;
     }
     
-    /* 标题样式 */
-    h1 {
-        font-family: 'Courier New', monospace;
+    /* 2. 标题特效 - 荧光绿 + 阴影 */
+    h1, h2, h3 {
+        color: #00ff41 !important;
+        text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41;
         text-transform: uppercase;
-        color: #00ff41; /* 黑客绿 */
-        text-shadow: 0 0 10px #00ff41;
-        border-bottom: 2px solid #00ff41;
-        padding-bottom: 10px;
+        letter-spacing: 2px;
     }
     
-    h3 {
+    /* 3. 表格深度美化 (去除所有白底) */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #003300;
+        background-color: #000000 !important;
+    }
+    
+    /* 表头 */
+    [data-testid="stDataFrame"] thead tr th {
+        background-color: #001100 !important;
+        color: #00ff41 !important;
+        border-bottom: 2px solid #00ff41 !important;
+        font-size: 14px !important;
+    }
+    
+    /* 表格内容区域背景 */
+    [data-testid="stDataFrame"] tbody {
+        background-color: #000000 !important;
+    }
+    
+    /* 单元格文字 */
+    [data-testid="stDataFrame"] tbody tr td {
+        background-color: #000000 !important;
+        color: #ccffcc !important; /* 稍微浅一点的绿，方便阅读 */
+        border-bottom: 1px solid #003300 !important;
         font-family: 'Courier New', monospace;
-        color: #e0e0e0;
-        border-left: 5px solid #ff00ff; /* 赛博粉 */
-        padding-left: 10px;
     }
 
-    /* 表格容器样式 */
-    .stDataFrame {
-        border: 1px solid #333;
-        box-shadow: 0 0 15px rgba(0, 255, 65, 0.1);
+    /* --- 关键修改：防止文字截断 --- */
+    /* 强制单元格内容换行，不显示省略号 */
+    div[data-testid="stdataframe-cell-content"] {
+        white-space: normal !important;
+        height: auto !important;
+        overflow-wrap: break-word !important;
+        padding: 5px !important;
+        line-height: 1.5 !important;
     }
 
-    /* 状态栏样式 */
-    .status-text {
-        font-family: 'Courier New', monospace;
-        color: #00bfff;
-        font-size: 0.8em;
+    /* 4. 进度条颜色改为绿色 */
+    .stProgress > div > div > div > div {
+        background-color: #00ff41 !important;
+    }
+    
+    /* 5. 状态栏 */
+    .status-terminal {
+        border: 1px dashed #00ff41;
+        padding: 10px;
+        color: #00ff41;
+        background-color: #050505;
+        font-size: 0.85em;
+        margin-top: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -59,7 +91,7 @@ st.markdown("""
 def fetch_raw_data():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-dev-shm-usage") # 云端防崩
+    chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-gpu")
     
@@ -74,7 +106,7 @@ def fetch_raw_data():
     try:
         driver.set_page_load_timeout(15)
         driver.get(url)
-        time.sleep(2) # 极速等待
+        time.sleep(2)
         
         rows = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
         current_scrape_time = datetime.now()
@@ -87,10 +119,8 @@ def fetch_raw_data():
                 market = cols[3].text
                 event = cols[4].text
                 amount = float(cols[6].text.replace('$', '').replace(',', ''))
-                # 原始时间字符串 (网页上的 "10 mins ago" 或具体时间)
                 raw_time_str = cols[9].text 
                 
-                # 生成唯一ID
                 unique_key = f"{event}_{market}_{side}_{amount}_{raw_time_str}"
                 
                 new_items.append({
@@ -99,75 +129,51 @@ def fetch_raw_data():
                     "Market": market,
                     "Side": side,
                     "Amount": amount,
-                    "ScrapeTime": current_scrape_time # 记录抓取时间作为基准
+                    "ScrapeTime": current_scrape_time
                 })
             except:
                 continue
     except Exception as e:
-        print(f"Scrape Error: {e}")
+        pass # 静默失败
     finally:
         driver.quit()
         
     return pd.DataFrame(new_items)
 
-# ================= 💾 数据引擎 (滚动窗口) =================
+# ================= 💾 数据逻辑 =================
 
-# 初始化或加载历史数据
 if 'master_pool' not in st.session_state:
     if os.path.exists(CACHE_FILE):
         try:
             df = pd.read_csv(CACHE_FILE)
             df['ScrapeTime'] = pd.to_datetime(df['ScrapeTime'])
             st.session_state.master_pool = df
-        except:
-            st.session_state.master_pool = pd.DataFrame()
-    else:
-        st.session_state.master_pool = pd.DataFrame()
-
-if 'last_update_str' not in st.session_state:
-    st.session_state.last_update_str = "SYSTEM_BOOT..."
+        except: st.session_state.master_pool = pd.DataFrame()
+    else: st.session_state.master_pool = pd.DataFrame()
 
 def process_data_pool(new_df):
-    """
-    1. 合并新数据
-    2. 去重
-    3. 清理超过30分钟的旧数据
-    4. 保存快照
-    """
     pool = st.session_state.master_pool
-    
     if not new_df.empty:
-        # 合并
         pool = pd.concat([pool, new_df])
-        # 去重 (保留最新的)
         pool = pool.drop_duplicates(subset=['unique_key'], keep='last')
     
-    # 清理旧数据 (只保留最近 MAX_HISTORY_MINUTES)
     if not pool.empty:
         cutoff_time = datetime.now() - timedelta(minutes=MAX_HISTORY_MINUTES)
         pool = pool[pool['ScrapeTime'] > cutoff_time]
     
     st.session_state.master_pool = pool
-    # 存盘
     pool.to_csv(CACHE_FILE, index=False)
     return pool
 
 def get_ranking(minutes_window):
-    """
-    从主池中切片，计算排名
-    """
     pool = st.session_state.master_pool
-    if pool.empty:
-        return pd.DataFrame()
+    if pool.empty: return pd.DataFrame()
     
-    # 筛选时间窗口
     cutoff = datetime.now() - timedelta(minutes=minutes_window)
     subset = pool[pool['ScrapeTime'] > cutoff]
     
-    if subset.empty:
-        return pd.DataFrame()
+    if subset.empty: return pd.DataFrame()
         
-    # 聚合
     ranking = subset.groupby(['Event', 'Market', 'Side']).agg(
         Count=('unique_key', 'count'),
         Total=('Amount', 'sum')
@@ -176,91 +182,95 @@ def get_ranking(minutes_window):
     # 排序
     ranking = ranking.sort_values(by=['Count', 'Total'], ascending=[False, False])
     ranking.index = range(1, len(ranking) + 1)
+    
+    # 重命名列以配合 UI 宽度
+    ranking = ranking.rename(columns={"Count": "Freq"})
     return ranking
 
-def style_ranking(df):
-    """给表格上色"""
-    if df.empty: return df
-    
-    # 颜色逻辑
-    def highlight_side(val):
-        color = '#00ff41' if ('BUY' in val or 'YES' in val) else '#ff0055'
-        return f'color: {color}; font-weight: bold; text-shadow: 0 0 5px {color};'
-    
-    return df.style.applymap(highlight_side, subset=['Side']).format({"Total": "${:,.0f}"})
+# ================= 🖥️ 界面渲染 =================
 
-# ================= 🖥️ 指挥舱界面 =================
-
-st.title("OPINION // ANALYTICS_HUB")
-st.markdown("<div class='status-text'>System Status: ONLINE | Mode: CONTINUOUS_SCAN | Target: opinionanalytics.xyz</div>", unsafe_allow_html=True)
-
-st.divider()
+st.title("OPINION // MATRIX_HUB")
+st.markdown("---")
 
 # 三栏布局
 col1, col2, col3 = st.columns(3)
 
-# 占位符 (防止页面跳动，先占坑)
+# 占位符
 with col1:
-    st.markdown("### ⚡ 1 MINUTE (BURST)")
+    st.markdown("### ⚡ 1 MINUTE")
     c1_placeholder = st.empty()
 with col2:
-    st.markdown("### 🌊 10 MINUTES (FLOW)")
+    st.markdown("### 🌊 10 MINUTES")
     c2_placeholder = st.empty()
 with col3:
-    st.markdown("### 💎 30 MINUTES (TREND)")
+    st.markdown("### 💎 30 MINUTES")
     c3_placeholder = st.empty()
 
-# 底部状态条
-st.divider()
 status_log = st.empty()
 
-# ================= 🔄 主循环 =================
+# 样式函数：给 Side 上色 (红/绿)
+def apply_matrix_color(df):
+    def highlight_text(val):
+        if 'BUY' in val or 'YES' in val:
+            return 'color: #00ff41; font-weight: bold;' # 亮绿
+        return 'color: #ff0055; font-weight: bold;'    # 赛博红
+    return df.style.applymap(highlight_text, subset=['Side']).format({"Total": "${:,.0f}"})
+
+# 渲染函数 (关键：配置 column_config 防止截断)
+def render_cyber_table(placeholder, df, max_val):
+    if df.empty:
+        placeholder.code("NO_DATA_SIGNAL...", language="bash")
+    else:
+        placeholder.dataframe(
+            apply_matrix_color(df),
+            use_container_width=True,
+            height=600, # 增加高度
+            column_config={
+                # 关键：设置 width="medium" 或 "large" 配合 CSS 强制换行
+                "Event": st.column_config.TextColumn("Event", width="medium"),
+                "Market": st.column_config.TextColumn("Market", width="medium"),
+                "Side": st.column_config.TextColumn("Side", width="small"),
+                "Total": st.column_config.NumberColumn("$$$", format="$%d"),
+                "Freq": st.column_config.ProgressColumn(
+                    "Vol", 
+                    format="%d", 
+                    min_value=0, 
+                    max_value=int(max_val * 1.2) if max_val > 0 else 10
+                )
+            }
+        )
+
+# ================= 🔄 LOOP =================
 while True:
-    # 1. 抓取与更新数据池
-    status_log.markdown(f"`[{datetime.now().strftime('%H:%M:%S')}] SCANNING NETWORK...`")
-    
+    # 1. 抓取
     new_batch = fetch_raw_data()
-    process_data_pool(new_batch) # 更新主数据池
+    process_data_pool(new_batch)
     
-    current_time = datetime.now().strftime('%H:%M:%S')
-    
-    # 2. 生成三份报表
+    # 2. 计算
     df_1m = get_ranking(1)
     df_10m = get_ranking(10)
     df_30m = get_ranking(30)
     
-    # 3. 渲染 UI (带进度条配置)
-    def render_table(placeholder, df, max_count):
-        if df.empty:
-            placeholder.info("NO_DATA_SIGNAL")
-        else:
-            placeholder.dataframe(
-                style_ranking(df),
-                use_container_width=True,
-                height=500, # 统一高度
-                column_config={
-                    "Count": st.column_config.ProgressColumn(
-                        format="%d",
-                        min_value=0,
-                        max_value=int(max_count * 1.2) if max_count > 0 else 10,
-                    ),
-                    "Event": st.column_config.TextColumn(width="small"),
-                    "Market": st.column_config.TextColumn(width="small")
-                }
-            )
-            
-    # 计算各自的最大值用于进度条比例
-    max_1m = df_1m['Count'].max() if not df_1m.empty else 0
-    max_10m = df_10m['Count'].max() if not df_10m.empty else 0
-    max_30m = df_30m['Count'].max() if not df_30m.empty else 0
+    # 3. 渲染
+    # 获取最大值用于统一度量衡
+    m1 = df_1m['Freq'].max() if not df_1m.empty else 0
+    m10 = df_10m['Freq'].max() if not df_10m.empty else 0
+    m30 = df_30m['Freq'].max() if not df_30m.empty else 0
     
-    render_table(c1_placeholder, df_1m, max_1m)
-    render_table(c2_placeholder, df_10m, max_10m)
-    render_table(c3_placeholder, df_30m, max_30m)
+    render_cyber_table(c1_placeholder, df_1m, m1)
+    render_cyber_table(c2_placeholder, df_10m, m10)
+    render_cyber_table(c3_placeholder, df_30m, m30)
     
-    # 4. 状态更新
-    pool_size = len(st.session_state.master_pool)
-    status_log.markdown(f"`[{current_time}] SYNC_COMPLETE | DATA_POOL_SIZE: {pool_size} | NEXT_SCAN: {POLL_INTERVAL}s`")
+    # 4. 底部终端状态栏
+    now_str = datetime.now().strftime('%H:%M:%S')
+    pool_len = len(st.session_state.master_pool)
+    status_log.markdown(
+        f"""<div class='status-terminal'>
+        SYSTEM_STATUS: ACTIVE<br>
+        LAST_SYNC: {now_str} | DATA_POOL_SIZE: {pool_len}<br>
+        TARGET: opinionanalytics.xyz | MODE: CONTINUOUS
+        </div>""", 
+        unsafe_allow_html=True
+    )
     
-    # 5. 短暂等待 (不显示倒计时，静默等待)
     time.sleep(POLL_INTERVAL)
