@@ -8,86 +8,77 @@ from selenium.webdriver.common.by import By
 from datetime import datetime, timedelta
 
 # ================= ⚙️ 核心配置 =================
-POLL_INTERVAL = 10       # 10秒刷新
-MAX_HISTORY_MINUTES = 30 # 数据池保留30分钟
+POLL_INTERVAL = 10       # 刷新频率
+MAX_HISTORY_MINUTES = 30 # 最大记忆时间
 CACHE_FILE = "matrix_data_pool.csv" 
 
-# ================= 🎨 极客 UI (MATRIX THEME) =================
-st.set_page_config(layout="wide", page_title="OPINION // MATRIX_CORE")
+# ================= 🎨 竖屏黑客 UI =================
+st.set_page_config(layout="wide", page_title="OPINION // VERTICAL_CORE")
 
-# 注入深度 CSS (强制覆盖 Streamlit 原生样式)
 st.markdown("""
 <style>
-    /* 1. 全局背景与字体 - 纯黑底色 */
+    /* 1. 彻底黑化背景 */
     .stApp {
         background-color: #000000;
         color: #00ff41;
-        font-family: 'Courier New', Courier, monospace;
+        font-family: 'Courier New', monospace;
     }
     
-    /* 2. 标题特效 - 荧光绿 + 阴影 */
+    /* 2. 标题样式 */
     h1, h2, h3 {
         color: #00ff41 !important;
-        text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41;
+        text-shadow: 0 0 10px #00ff41;
         text-transform: uppercase;
-        letter-spacing: 2px;
+        border-left: 5px solid #00ff41;
+        padding-left: 15px;
+        margin-top: 30px; /* 增加垂直间距 */
     }
     
-    /* 3. 表格深度美化 (去除所有白底) */
+    /* 3. 表格深度定制 (去除所有白底) */
     [data-testid="stDataFrame"] {
         border: 1px solid #003300;
         background-color: #000000 !important;
+        box-shadow: 0 0 15px rgba(0, 255, 65, 0.1);
     }
     
     /* 表头 */
     [data-testid="stDataFrame"] thead tr th {
-        background-color: #001100 !important;
+        background-color: #051105 !important;
         color: #00ff41 !important;
         border-bottom: 2px solid #00ff41 !important;
-        font-size: 14px !important;
     }
     
-    /* 表格内容区域背景 */
-    [data-testid="stDataFrame"] tbody {
-        background-color: #000000 !important;
-    }
-    
-    /* 单元格文字 */
+    /* 单元格 */
     [data-testid="stDataFrame"] tbody tr td {
         background-color: #000000 !important;
-        color: #ccffcc !important; /* 稍微浅一点的绿，方便阅读 */
-        border-bottom: 1px solid #003300 !important;
+        color: #ccffcc !important;
+        border-bottom: 1px solid #112211 !important;
         font-family: 'Courier New', monospace;
     }
 
-    /* --- 关键修改：防止文字截断 --- */
-    /* 强制单元格内容换行，不显示省略号 */
+    /* --- 关键：解决文字折叠 --- */
     div[data-testid="stdataframe-cell-content"] {
-        white-space: normal !important;
+        white-space: normal !important; /* 强制换行 */
         height: auto !important;
-        overflow-wrap: break-word !important;
-        padding: 5px !important;
         line-height: 1.5 !important;
+        padding: 8px !important;
     }
 
-    /* 4. 进度条颜色改为绿色 */
-    .stProgress > div > div > div > div {
-        background-color: #00ff41 !important;
+    /* 4. 去除 Streamlit 默认的白色区块装饰 */
+    div[data-testid="stVerticalBlock"] {
+        background-color: transparent !important;
     }
     
     /* 5. 状态栏 */
-    .status-terminal {
-        border: 1px dashed #00ff41;
-        padding: 10px;
-        color: #00ff41;
-        background-color: #050505;
-        font-size: 0.85em;
-        margin-top: 20px;
+    .status-line {
+        color: #005500;
+        font-size: 0.8em;
+        margin-bottom: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 🕷️ 爬虫核心 =================
+# ================= 🕷️ 爬虫部分 (保持不变) =================
 def fetch_raw_data():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -133,19 +124,20 @@ def fetch_raw_data():
                 })
             except:
                 continue
-    except Exception as e:
-        pass # 静默失败
+    except:
+        pass
     finally:
         driver.quit()
         
     return pd.DataFrame(new_items)
 
-# ================= 💾 数据逻辑 =================
+# ================= 💾 数据处理 (修复时间格式BUG) =================
 
 if 'master_pool' not in st.session_state:
     if os.path.exists(CACHE_FILE):
         try:
             df = pd.read_csv(CACHE_FILE)
+            # 【关键修复】确保读取后的时间列是 datetime 类型，否则无法比较大小
             df['ScrapeTime'] = pd.to_datetime(df['ScrapeTime'])
             st.session_state.master_pool = df
         except: st.session_state.master_pool = pd.DataFrame()
@@ -157,7 +149,10 @@ def process_data_pool(new_df):
         pool = pd.concat([pool, new_df])
         pool = pool.drop_duplicates(subset=['unique_key'], keep='last')
     
+    # 清理旧数据
     if not pool.empty:
+        # 确保 pool['ScrapeTime'] 是 datetime 类型
+        pool['ScrapeTime'] = pd.to_datetime(pool['ScrapeTime'])
         cutoff_time = datetime.now() - timedelta(minutes=MAX_HISTORY_MINUTES)
         pool = pool[pool['ScrapeTime'] > cutoff_time]
     
@@ -169,6 +164,7 @@ def get_ranking(minutes_window):
     pool = st.session_state.master_pool
     if pool.empty: return pd.DataFrame()
     
+    # 筛选
     cutoff = datetime.now() - timedelta(minutes=minutes_window)
     subset = pool[pool['ScrapeTime'] > cutoff]
     
@@ -183,94 +179,72 @@ def get_ranking(minutes_window):
     ranking = ranking.sort_values(by=['Count', 'Total'], ascending=[False, False])
     ranking.index = range(1, len(ranking) + 1)
     
-    # 重命名列以配合 UI 宽度
-    ranking = ranking.rename(columns={"Count": "Freq"})
-    return ranking
+    return ranking.rename(columns={"Count": "Freq"})
 
-# ================= 🖥️ 界面渲染 =================
+# ================= 🖥️ 竖向布局逻辑 =================
 
-st.title("OPINION // MATRIX_HUB")
-st.markdown("---")
+st.title("OPINION // MATRIX_VERTICAL")
+st.markdown("<div class='status-line'>SYSTEM: ONLINE | LAYOUT: VERTICAL_STACK</div>", unsafe_allow_html=True)
 
-# 三栏布局
-col1, col2, col3 = st.columns(3)
-
-# 占位符
-with col1:
-    st.markdown("### ⚡ 1 MINUTE")
-    c1_placeholder = st.empty()
-with col2:
-    st.markdown("### 🌊 10 MINUTES")
-    c2_placeholder = st.empty()
-with col3:
-    st.markdown("### 💎 30 MINUTES")
-    c3_placeholder = st.empty()
-
-status_log = st.empty()
-
-# 样式函数：给 Side 上色 (红/绿)
+# 样式着色
 def apply_matrix_color(df):
     def highlight_text(val):
-        if 'BUY' in val or 'YES' in val:
-            return 'color: #00ff41; font-weight: bold;' # 亮绿
-        return 'color: #ff0055; font-weight: bold;'    # 赛博红
+        if 'BUY' in val or 'YES' in val: return 'color: #00ff41; font-weight: bold;'
+        return 'color: #ff0055; font-weight: bold;'
     return df.style.applymap(highlight_text, subset=['Side']).format({"Total": "${:,.0f}"})
 
-# 渲染函数 (关键：配置 column_config 防止截断)
-def render_cyber_table(placeholder, df, max_val):
-    if df.empty:
-        placeholder.code("NO_DATA_SIGNAL...", language="bash")
-    else:
-        placeholder.dataframe(
-            apply_matrix_color(df),
-            use_container_width=True,
-            height=600, # 增加高度
-            column_config={
-                # 关键：设置 width="medium" 或 "large" 配合 CSS 强制换行
-                "Event": st.column_config.TextColumn("Event", width="medium"),
-                "Market": st.column_config.TextColumn("Market", width="medium"),
-                "Side": st.column_config.TextColumn("Side", width="small"),
-                "Total": st.column_config.NumberColumn("$$$", format="$%d"),
-                "Freq": st.column_config.ProgressColumn(
-                    "Vol", 
-                    format="%d", 
-                    min_value=0, 
-                    max_value=int(max_val * 1.2) if max_val > 0 else 10
-                )
-            }
-        )
+# 渲染表格函数
+def render_section(title, minutes, placeholder):
+    df = get_ranking(minutes)
+    
+    # 获取最大值做进度条参考
+    max_val = df['Freq'].max() if not df.empty else 0
+    
+    with placeholder.container():
+        st.markdown(f"### {title}") # 标题在上方
+        if df.empty:
+            st.code("WAITING_FOR_DATA_STREAM...", language="bash")
+        else:
+            st.dataframe(
+                apply_matrix_color(df),
+                use_container_width=True, # 宽度铺满
+                height=None, # 只有设置为None，才能自适应显示所有内容而不折叠，或者设置一个很大的值
+                column_config={
+                    # 设置为 large 确保宽列不换行太严重
+                    "Event": st.column_config.TextColumn("Event Name", width="large"), 
+                    "Market": st.column_config.TextColumn("Market Target", width="medium"),
+                    "Side": st.column_config.TextColumn("Side", width="small"),
+                    "Total": st.column_config.NumberColumn("$$$", format="$%d"),
+                    "Freq": st.column_config.ProgressColumn(
+                        "Volume", 
+                        format="%d", 
+                        min_value=0, 
+                        max_value=int(max_val * 1.2) if max_val > 0 else 10
+                    )
+                },
+                hide_index=False # 保留排名
+            )
+        st.markdown("---") # 分割线
 
-# ================= 🔄 LOOP =================
+# 占位符 (垂直排列)
+p1 = st.empty()
+p2 = st.empty()
+p3 = st.empty()
+log_p = st.empty()
+
+# ================= 🔄 主循环 =================
 while True:
-    # 1. 抓取
+    # 1. 抓取与更新
     new_batch = fetch_raw_data()
     process_data_pool(new_batch)
     
-    # 2. 计算
-    df_1m = get_ranking(1)
-    df_10m = get_ranking(10)
-    df_30m = get_ranking(30)
+    # 2. 渲染三个板块 (垂直顺序)
+    render_section("⚡ 1 MINUTE (BURST)", 1, p1)
+    render_section("🌊 10 MINUTES (FLOW)", 10, p2)
+    render_section("💎 30 MINUTES (TREND)", 30, p3)
     
-    # 3. 渲染
-    # 获取最大值用于统一度量衡
-    m1 = df_1m['Freq'].max() if not df_1m.empty else 0
-    m10 = df_10m['Freq'].max() if not df_10m.empty else 0
-    m30 = df_30m['Freq'].max() if not df_30m.empty else 0
-    
-    render_cyber_table(c1_placeholder, df_1m, m1)
-    render_cyber_table(c2_placeholder, df_10m, m10)
-    render_cyber_table(c3_placeholder, df_30m, m30)
-    
-    # 4. 底部终端状态栏
-    now_str = datetime.now().strftime('%H:%M:%S')
+    # 3. 底部日志
     pool_len = len(st.session_state.master_pool)
-    status_log.markdown(
-        f"""<div class='status-terminal'>
-        SYSTEM_STATUS: ACTIVE<br>
-        LAST_SYNC: {now_str} | DATA_POOL_SIZE: {pool_len}<br>
-        TARGET: opinionanalytics.xyz | MODE: CONTINUOUS
-        </div>""", 
-        unsafe_allow_html=True
-    )
+    log_p.markdown(f"`SYNC_TIME: {datetime.now().strftime('%H:%M:%S')} | POOL: {pool_len}`")
     
     time.sleep(POLL_INTERVAL)
