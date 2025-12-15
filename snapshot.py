@@ -88,7 +88,7 @@ def fetch_raw_data():
 
 # ================= 🧠 主逻辑 =================
 # 先渲染标题，防止白屏等待
-st.title("🦅 Opinion交易热度看板")
+st.title("Opinion交易热度看板")
 
 st.markdown(f"""
 <a href="{MY_TWITTER_LINK}" target="_blank" class="brand-link-container">
