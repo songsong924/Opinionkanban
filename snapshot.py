@@ -1,341 +1,177 @@
 import streamlit as st
 import pandas as pd
 import time
-import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
 from datetime import datetime, timedelta
 
-# ================= ⚙️ 配置区 =================
-POLL_INTERVAL = 10       # 刷新间隔
-MAX_HISTORY_MINUTES = 30 # 最大记忆时长
-CACHE_FILE = "opinion_data_pool.csv"
+# ================= 🛡️ 极低内存模式配置 =================
+st.set_page_config(layout="wide", page_title="0xsong 终端")
 
-# 【👇 您的信息】
-MY_TWITTER_LINK = "https://x.com/songsong7364"
+MY_TWITTER_LINK = "https://twitter.com/songpeng_web3"
 MY_BRAND_NAME = "0xsong"
-# ===========================================
 
-# ================= 🎨 UI 深度定制 =================
-st.set_page_config(layout="wide", page_title=f"{MY_BRAND_NAME} Alpha 终端")
+# 白色图标
+twitter_white_svg = """<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231h0.001zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="#ffffff"/></svg>"""
 
-# 图标资源
-twitter_x_svg = """<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231h0.001zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="currentColor"/></svg>"""
-
+# 强制注入皮肤 (无需配置文件)
 st.markdown("""
 <style>
-    /* 全局 */
     .stApp { background-color: #0e0e0e; color: #e0e0e0; }
-    
-    /* 品牌条 */
-    .brand-link-container {
-        display: inline-flex; align-items: center; text-decoration: none;
-        background-color: #1f1f1f; border: 1px solid #333; padding: 8px 16px;
-        border-radius: 30px; transition: all 0.3s ease; color: #e0e0e0; margin-bottom: 20px;
-    }
-    .brand-link-container:hover {
-        background-color: #333; border-color: #00ff41; color: #00ff41;
-        transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 255, 65, 0.2);
-    }
-    .brand-icon-wrapper { display: flex; align-items: center; margin-right: 8px; }
-    .brand-text { font-weight: 600; font-size: 14px; }
-
-    /* Tabs */
-    button[data-baseweb="tab"] {
-        background-color: #1a1a1a; color: #888; border-radius: 5px; margin-right: 5px; border: 1px solid #333;
-    }
-    button[data-baseweb="tab"][aria-selected="true"] {
-        background-color: #00ff41 !important; color: #000000 !important; border: 1px solid #00ff41 !important; font-weight: bold;
-    }
-
-    /* 表格优化 */
     [data-testid="stDataFrame"] { background-color: #161616 !important; border: 1px solid #333 !important; }
-    [data-testid="stDataFrame"] thead tr th { background-color: #1f1f1f !important; color: #888 !important; }
     
-    /* 异动卡片 */
-    .alert-card { padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid; background: #1a1a1a; }
-    .level-5 { border-color: #3b82f6; }
-    .level-10 { border-color: #eab308; }
-    .level-30 { border-color: #ef4444; animation: pulse 2s infinite; }
-    @keyframes pulse { 0% {box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);} 100% {box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);} }
+    .brand-link-container {
+        display: flex; justify-content: center; align-items: center; text-decoration: none;
+        background-color: #1f1f1f; border: 1px dashed #00ff41; padding: 12px;
+        border-radius: 8px; color: #00ff41; margin-bottom: 25px; transition: 0.3s;
+    }
+    .brand-link-container:hover { background-color: #00ff41; color: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.5); }
+    .brand-text { margin-left: 8px; font-weight: bold; }
+    
+    button[data-baseweb="tab"] { background-color: #1a1a1a; border: 1px solid #333; color: #888; }
+    button[data-baseweb="tab"][aria-selected="true"] { background-color: #00ff41 !important; color: #000 !important; }
+    
+    .alert-card { padding: 10px; border-radius: 5px; margin-bottom: 8px; border-left: 4px solid; background: #1a1a1a; }
+    .level-5 { border-color: #3b82f6; } .level-10 { border-color: #eab308; } .level-30 { border-color: #ef4444; }
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 🕷️ 爬虫引擎 =================
+# ================= 🕷️ 爬虫引擎 (内存防爆版) =================
+def get_driver():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage") # 关键
+    options.add_argument("--disable-gpu")
+    options.add_argument("--single-process") # 关键：单进程省内存
+    return webdriver.Chrome(options=options)
+
 def fetch_raw_data():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-gpu")
-    
-    driver = webdriver.Chrome(options=chrome_options)
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    })
-    
-    url = "https://opinionanalytics.xyz/activity"
-    new_items = []
-    
+    driver = None
     try:
-        driver.set_page_load_timeout(15)
-        driver.get(url)
-        time.sleep(2)
+        driver = get_driver() # 启动浏览器
+        driver.get("https://opinionanalytics.xyz/activity")
+        time.sleep(3) # 等待加载
         
-        rows = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
-        current_scrape_time = datetime.now()
+        new_items = []
+        # 快速抓取
+        rows = driver.find_elements("css selector", "table tbody tr")
+        now = datetime.now()
         
         for row in rows:
-            cols = row.find_elements(By.TAG_NAME, "td")
-            if len(cols) < 8: continue
             try:
-                side = cols[1].text
-                market = cols[3].text
-                event = cols[4].text
-                amount = float(cols[6].text.replace('$', '').replace(',', ''))
-                price_str = cols[7].text 
-                price = float(price_str) if price_str.replace('.', '', 1).isdigit() else 0.0
-                raw_time_str = cols[9].text 
+                cols = row.find_elements("tag name", "td")
+                if len(cols) < 8: continue
                 
-                unique_key = f"{event}_{market}_{side}_{amount}_{raw_time_str}"
+                side = cols[1].text
+                event = cols[4].text
+                amt = float(cols[6].text.replace('$', '').replace(',', ''))
+                price = float(cols[7].text) if cols[7].text.replace('.', '', 1).isdigit() else 0.0
                 
                 new_items.append({
-                    "unique_key": unique_key,
-                    "Event": event,
-                    "Market": market,
-                    "Side": side,
-                    "Amount": amount,
-                    "Price": price,
-                    "ScrapeTime": current_scrape_time
+                    "unique_key": f"{event}_{cols[3].text}_{side}_{amt}_{cols[9].text}",
+                    "Event": event, "Market": cols[3].text, "Side": side, 
+                    "Amount": amt, "Price": price, "ScrapeTime": now
                 })
-            except:
-                continue
-    except:
-        pass
-    finally:
-        driver.quit()
-        
-    return pd.DataFrame(new_items)
-
-# ================= 💾 数据核心 =================
-
-if 'master_pool' not in st.session_state:
-    if os.path.exists(CACHE_FILE):
-        try:
-            df = pd.read_csv(CACHE_FILE)
-            df['ScrapeTime'] = pd.to_datetime(df['ScrapeTime'])
-            st.session_state.master_pool = df
-        except: st.session_state.master_pool = pd.DataFrame()
-    else: st.session_state.master_pool = pd.DataFrame()
-
-# 【新增】用于存储上一次排名的字典
-if 'rank_history' not in st.session_state:
-    st.session_state.rank_history = {}
-
-def process_data(new_df):
-    pool = st.session_state.master_pool
-    if not new_df.empty:
-        pool = pd.concat([pool, new_df])
-        pool = pool.drop_duplicates(subset=['unique_key'], keep='last')
-    
-    if not pool.empty:
-        pool['ScrapeTime'] = pd.to_datetime(pool['ScrapeTime'])
-        cutoff = datetime.now() - timedelta(minutes=MAX_HISTORY_MINUTES)
-        pool = pool[pool['ScrapeTime'] > cutoff]
-    
-    st.session_state.master_pool = pool
-    pool.to_csv(CACHE_FILE, index=False)
-    return pool
-
-def get_enhanced_ranking(minutes, window_name):
-    pool = st.session_state.master_pool
-    if pool.empty: return pd.DataFrame()
-    
-    cutoff = datetime.now() - timedelta(minutes=minutes)
-    subset = pool[pool['ScrapeTime'] > cutoff]
-    if subset.empty: return pd.DataFrame()
-    
-    # 1. 计算基础排行
-    df = subset.groupby(['Event', 'Market', 'Side']).agg(
-        Count=('unique_key', 'count'),
-        Total=('Amount', 'sum'),
-        AvgPrice=('Price', 'mean')
-    ).reset_index()
-    
-    # 2. 【核心逻辑】计算多空博弈比 (Long Ratio)
-    # 先计算每个 Event+Market 的总资金
-    event_totals = subset.groupby(['Event', 'Market'])['Amount'].sum().to_dict()
-    # 再计算 Long 资金 (BUY or YES)
-    long_subset = subset[subset['Side'].isin(['BUY', 'YES'])]
-    long_totals = long_subset.groupby(['Event', 'Market'])['Amount'].sum().to_dict()
-    
-    def calc_long_ratio(row):
-        key = (row['Event'], row['Market'])
-        total = event_totals.get(key, 0)
-        if total == 0: return 0
-        long_amt = long_totals.get(key, 0)
-        return long_amt / total # 返回 0.0 - 1.0
-        
-    df['LongRatio'] = df.apply(calc_long_ratio, axis=1)
-
-    # 3. 排序
-    df = df.sort_values(by=['Count', 'Total'], ascending=[False, False])
-    df.reset_index(drop=True, inplace=True)
-    df.index += 1 # 排名从1开始
-    
-    # 4. 【核心逻辑】计算趋势 (Velocity)
-    current_ranks = {}
-    velocity_icons = []
-    
-    # 获取上一次的排名记录
-    prev_ranks = st.session_state.rank_history.get(window_name, {})
-    
-    for rank, row in df.iterrows():
-        # 生成唯一标识 key
-        key = f"{row['Event']}_{row['Market']}_{row['Side']}"
-        current_ranks[key] = rank
-        
-        if key not in prev_ranks:
-            velocity_icons.append("🔥") # 新上榜
-        else:
-            prev = prev_ranks[key]
-            diff = prev - rank # 如果上次第5，这次第2，5-2=3 (上升)
-            if diff > 0: velocity_icons.append("⬆️")
-            elif diff < 0: velocity_icons.append("⬇️")
-            else: velocity_icons.append("➖")
+            except: continue
             
-    df['Trend'] = velocity_icons
-    
-    # 更新历史记录供下次使用
-    st.session_state.rank_history[window_name] = current_ranks
-    
-    return df
+        return pd.DataFrame(new_items)
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return pd.DataFrame()
+    finally:
+        # ⚠️ 关键操作：抓完立刻杀死浏览器，释放内存！
+        if driver:
+            try: driver.quit()
+            except: pass
 
-# ... (check_alerts 函数保持不变，直接复用之前的代码即可) ...
-def check_alerts():
-    pool = st.session_state.master_pool
-    if pool.empty: return [], [], []
-    alerts_5, alerts_10, alerts_30 = [], [], []
-    grouped = pool.groupby(['Event', 'Market', 'Side'])
-    for name, group in grouped:
-        if len(group) < 2: continue
-        group = group.sort_values('ScrapeTime')
-        start_price, end_price = group.iloc[0]['Price'], group.iloc[-1]['Price']
-        if start_price == 0: continue
-        diff = end_price - start_price
-        item = {"Event": name[0], "Market": name[1], "Side": name[2], "Start": start_price, "End": end_price, "Diff": diff}
-        if abs(diff) >= 30: alerts_30.append(item)
-        elif abs(diff) >= 10: alerts_10.append(item)
-        elif abs(diff) >= 5: alerts_5.append(item)
-    return alerts_5, alerts_10, alerts_30
-
-# ================= 🖥️ 渲染逻辑 =================
-
-st.title("OPINION交易热度看板")
+# ================= 🧠 主逻辑 =================
+# 先渲染标题，防止白屏等待
+st.title("🦅 Opinion Alpha 终端")
 
 st.markdown(f"""
-    <a href="{MY_TWITTER_LINK}" target="_blank" class="brand-link-container">
-        <span class="brand-icon-wrapper">{twitter_x_svg}</span>
-        <span class="brand-text">{MY_BRAND_NAME}</span>
-    </a>
+<a href="{MY_TWITTER_LINK}" target="_blank" class="brand-link-container">
+    {twitter_white_svg}
+    <span class="brand-text">点击关注 {MY_BRAND_NAME} 获取更多 Alpha 信号</span>
+</a>
 """, unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4 = st.tabs(["⚡ 1 分钟", "🌊 10 分钟", "💎 30 分钟", "🚨 异动预警"])
+# 初始化Session
+if 'pool' not in st.session_state: st.session_state.pool = pd.DataFrame()
+if 'ranks' not in st.session_state: st.session_state.ranks = {}
 
-with tab1: ph_1m = st.empty()
-with tab2: ph_10m = st.empty()
-with tab3: ph_30m = st.empty()
-with tab4: 
-    st.caption("监控过去30分钟内，胜率(价格)发生剧烈波动的事件")
-    col_a, col_b, col_c = st.columns(3)
-    with col_a: ph_alert_5 = st.empty()
-    with col_b: ph_alert_10 = st.empty()
-    with col_c: ph_alert_30 = st.empty()
+# 核心逻辑：先加载页面，再运行爬虫
+# 我们用 try-catch 包裹，确保即使爬虫挂了，页面也不会崩
+try:
+    with st.spinner("正在连接卫星数据..."):
+        new_df = fetch_raw_data()
+        
+    if not new_df.empty:
+        p = pd.concat([st.session_state.pool, new_df]).drop_duplicates(subset=['unique_key'], keep='last')
+        p['ScrapeTime'] = pd.to_datetime(p['ScrapeTime'])
+        st.session_state.pool = p[p['ScrapeTime'] > (datetime.now() - timedelta(minutes=30))]
+except Exception as e:
+    st.error("数据连接暂时中断，正在重连...")
 
-status_ph = st.empty()
+# 渲染 Tabs
+t1, t2, t3, t4 = st.tabs(["⚡ 1 分钟", "🌊 10 分钟", "💎 30 分钟", "🚨 预警"])
 
-def style_dataframe(df):
-    def highlight_side(val):
-        if 'BUY' in val or 'YES' in val: return 'color: #4ade80; font-weight: bold;' 
-        return 'color: #f87171; font-weight: bold;'
-    return df.style.applymap(highlight_side, subset=['Side']).format({"Total": "${:,.0f}", "AvgPrice": "{:.1f}%"})
+def render(min_val, tab, key):
+    with tab:
+        p = st.session_state.pool
+        if p.empty: 
+            st.info("等待信号流入...")
+            return
+        
+        cutoff = datetime.now() - timedelta(minutes=min_val)
+        sub = p[p['ScrapeTime'] > cutoff]
+        if sub.empty: 
+            st.caption("该时段暂无交易")
+            return
+        
+        # 聚合
+        agg = sub.groupby(['Event', 'Market', 'Side']).agg(
+            Count=('unique_key', 'count'), Total=('Amount', 'sum'), AvgPrice=('Price', 'mean')
+        ).reset_index().sort_values(['Count', 'Total'], ascending=False).reset_index(drop=True)
+        agg.index += 1
+        
+        # 多空比
+        try:
+            total_map = sub.groupby(['Event', 'Market'])['Amount'].sum()
+            long_map = sub[sub['Side'].isin(['BUY', 'YES'])].groupby(['Event', 'Market'])['Amount'].sum()
+            agg['LongRatio'] = agg.apply(lambda r: (long_map.get((r['Event'], r['Market']), 0) / total_map.get((r['Event'], r['Market']), 1)), axis=1)
+        except: agg['LongRatio'] = 0.5
+        
+        # 趋势
+        trends = []
+        curr_ranks = {}
+        hist = st.session_state.ranks.get(key, {})
+        for r, row in agg.iterrows():
+            k = f"{row['Event']}_{row['Market']}"
+            curr_ranks[k] = r
+            trends.append("🔥" if k not in hist else ("⬆️" if hist[k] > r else ("⬇️" if hist[k] < r else "➖")))
+        agg['Trend'] = trends
+        st.session_state.ranks[key] = curr_ranks
 
-def render_table(minutes, placeholder, window_name):
-    df = get_enhanced_ranking(minutes, window_name)
-    with placeholder.container():
-        if df.empty:
-            st.info("数据积累中...")
-        else:
-            row_h = 35 
-            h = (len(df) + 1) * row_h + 3
-            if h > 800: h = 800
-            
-            st.dataframe(
-                style_dataframe(df),
-                use_container_width=True, 
-                height=int(h),    
-                column_config={
-                    "Trend": st.column_config.TextColumn("趋势", width="small"), # 新增趋势图标
-                    "Event": st.column_config.TextColumn("事件", width="large"), 
-                    "Market": st.column_config.TextColumn("市场", width="medium"),
-                    "Side": st.column_config.TextColumn("方向", width="small"),
-                    "Total": st.column_config.NumberColumn("成交额", format="$%d"),
-                    # 【新增】多空博弈条
-                    "LongRatio": st.column_config.ProgressColumn(
-                        "买卖情绪", 
-                        format="%.2f", 
-                        min_value=0, 
-                        max_value=1
-                    ),
-                    "AvgPrice": st.column_config.NumberColumn("均价", format="%.1f"),
-                    "Count": st.column_config.ProgressColumn("热度", format="%d", min_value=0, max_value=int(df['Count'].max()*1.2)),
-                }
-            )
+        st.dataframe(agg.style.format({"Total": "${:,.0f}", "AvgPrice": "{:.1f}%"}), use_container_width=True, height=500,
+                     column_config={"LongRatio": st.column_config.ProgressColumn("多空 (绿多)", min_value=0, max_value=1),
+                                    "Trend": st.column_config.TextColumn("趋势", width="small"),
+                                    "Count": st.column_config.ProgressColumn("热度", max_value=int(agg['Count'].max()*1.2))})
 
-def render_alerts(alerts, placeholder, level):
-    with placeholder.container():
-        st.markdown(f"##### 波动 > {level}%")
-        if not alerts:
-            st.markdown(f"<div style='color:#666; font-size:12px; padding:10px'>无异常</div>", unsafe_allow_html=True)
-        else:
-            for item in alerts:
-                color = "#ef4444" if item['Diff'] < 0 else "#22c55e"
-                arrow = "📉" if item['Diff'] < 0 else "📈"
-                html = f"""
-                <div class="alert-card level-{level}">
-                    <div style="font-size:12px; color:#888">{item['Market']}</div>
-                    <div style="font-weight:bold; margin:2px 0; font-size:13px">{item['Event']}</div>
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px">
-                        <span style="background:#333; padding:2px 6px; border-radius:4px; font-size:11px; color:#ccc">{item['Side']}</span>
-                        <span style="color:{color}; font-weight:bold; font-size:13px">{arrow} {item['Start']:.1f} ➝ {item['End']:.1f} ({item['Diff']:+.1f}%)</span>
-                    </div>
-                </div>"""
-                st.markdown(html, unsafe_allow_html=True)
+render(1, t1, "1m"); render(10, t2, "10m"); render(30, t3, "30m")
 
-# ================= 🔄 LOOP =================
-last_alert_time = datetime.now()
+# 异动预警
+with t4:
+    if not st.session_state.pool.empty:
+        for n, g in st.session_state.pool.groupby(['Event', 'Market', 'Side']):
+            if len(g) < 2: continue
+            g = g.sort_values('ScrapeTime')
+            diff = g.iloc[-1]['Price'] - g.iloc[0]['Price']
+            if abs(diff) >= 5:
+                lvl = 30 if abs(diff)>=30 else (10 if abs(diff)>=10 else 5)
+                st.markdown(f"<div class='alert-card level-{lvl}'><b>{n[0]}</b> ({n[2]}): {diff:+.1f}%</div>", unsafe_allow_html=True)
 
-while True:
-    new_data = fetch_raw_data()
-    process_data(new_data)
-    
-    # 传入 window_name 以便分别记忆排名
-    render_table(1, ph_1m, "1m")
-    render_table(10, ph_10m, "10m")
-    render_table(30, ph_30m, "30m")
-    
-    a5, a10, a30 = check_alerts()
-    render_alerts(a5, ph_alert_5, 5)
-    render_alerts(a10, ph_alert_10, 10)
-    render_alerts(a30, ph_alert_30, 30)
-    
-    if (a10 or a30) and (datetime.now() - last_alert_time).seconds > 60:
-        count = len(a10) + len(a30)
-        st.toast(f"⚠️ 发现 {count} 个事件剧烈波动！", icon="🚨")
-        last_alert_time = datetime.now()
-    
-    pool_size = len(st.session_state.master_pool)
-    status_ph.markdown(f"<div class='status-bar'>系统在线 | 缓存池: {pool_size} | 刷新: {datetime.now().strftime('%H:%M:%S')}</div>", unsafe_allow_html=True)
-    
-    time.sleep(POLL_INTERVAL)
+# 自动刷新 (最稳妥的写法)
+time.sleep(10)
+st.rerun()
