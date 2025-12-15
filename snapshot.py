@@ -11,7 +11,7 @@ MAX_HISTORY_MINUTES = 30 # 最大记忆时长
 CACHE_FILE = "opinion_data_pool.csv"
 
 # 【👇 您的信息】
-MY_TWITTER_LINK = "https://twitter.com/songpeng_web3"
+MY_TWITTER_LINK = "https://x.com/songsong7364"
 MY_BRAND_NAME = "0xsong"
 # ===========================================
 
