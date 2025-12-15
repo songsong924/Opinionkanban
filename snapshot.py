@@ -232,7 +232,7 @@ def check_alerts():
 
 # ================= 🖥️ 渲染逻辑 =================
 
-st.title("OPINION Alpha 终端")
+st.title("OPINION交易热度看板")
 
 st.markdown(f"""
     <a href="{MY_TWITTER_LINK}" target="_blank" class="brand-link-container">
@@ -283,7 +283,7 @@ def render_table(minutes, placeholder, window_name):
                     "Total": st.column_config.NumberColumn("成交额", format="$%d"),
                     # 【新增】多空博弈条
                     "LongRatio": st.column_config.ProgressColumn(
-                        "多空情绪 (绿多/灰空)", 
+                        "买卖情绪", 
                         format="%.2f", 
                         min_value=0, 
                         max_value=1
