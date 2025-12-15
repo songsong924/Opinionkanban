@@ -289,7 +289,7 @@ def render_table(minutes, tab, window_name):
                     "Side": st.column_config.TextColumn("方向", width="small"),
                     "Total": st.column_config.NumberColumn("成交额", format="$%d"),
                     "LongRatio": st.column_config.ProgressColumn(
-                        "多空情绪 (绿多/灰空)", 
+                        "多空情绪", 
                         format="%.2f", 
                         min_value=0, 
                         max_value=1
