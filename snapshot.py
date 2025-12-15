@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # ================= 🛡️ 极简配置 =================
 st.set_page_config(layout="wide", page_title="0xsong 终端")
 
-MY_TWITTER_LINK = "https://twitter.com/songpeng_web3"
+MY_TWITTER_LINK = "https://x.com/songsong7364"
 MY_BRAND_NAME = "0xsong"
 
 # 白色图标
@@ -103,7 +103,7 @@ st.title("Opinion热门交易看板")
 st.markdown(f"""
 <a href="{MY_TWITTER_LINK}" target="_blank" class="brand-link-container">
     {twitter_white_svg}
-    <span class="brand-text">点击关注 {MY_BRAND_NAME} 获取更多 Alpha 信号</span>
+    <span class="brand-text">点击关注 {MY_BRAND_NAME} 获取更多</span>
 </a>
 """, unsafe_allow_html=True)
 
