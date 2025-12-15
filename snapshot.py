@@ -3,23 +3,20 @@ import pandas as pd
 import time
 import gc 
 from datetime import datetime, timedelta
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 
-# ================= 🛡️ 极简内存优化配置 =================
-st.set_page_config(layout="wide", page_title="0xsong 终端")
+# ================= 🛡️ 极简配置 =================
+st.set_page_config(layout="wide", page_title="0xsong Opinion")
 
 MY_TWITTER_LINK = "https://x.com/songsong7364"
 MY_BRAND_NAME = "0xsong"
-REFRESH_RATE = 20 # 休眠时间 (秒)，调大一点可以让服务器“回血”，防止崩盘
+REFRESH_RATE = 20 # 刷新间隔(秒)
 
-# 白色图标
+# 白色图标 (修复版)
 twitter_white_svg = """<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231h0.001zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="#ffffff"/></svg>"""
 
-# 强制注入皮肤 (恢复经典黑客风)
+# 强制注入皮肤
 st.markdown("""
 <style>
-    /* 全局去白边 */
     .block-container { padding-top: 1rem; padding-bottom: 0rem; }
     .stApp { background-color: #0e0e0e; color: #e0e0e0; }
     
@@ -36,7 +33,7 @@ st.markdown("""
     .brand-link-container:hover { background-color: #00ff41; color: #000; box-shadow: 0 0 15px rgba(0, 255, 65, 0.5); }
     .brand-text { margin-left: 8px; font-weight: bold; font-family: monospace; }
     
-    /* Tabs 样式恢复 */
+    /* Tabs 样式 */
     button[data-baseweb="tab"] { background-color: #1a1a1a; border: 1px solid #333; color: #888; border-radius: 4px; margin-right: 4px; }
     button[data-baseweb="tab"][aria-selected="true"] { background-color: #00ff41 !important; color: #000 !important; border-color: #00ff41 !important; font-weight: bold; }
     
@@ -49,9 +46,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ================= 🕷️ 爬虫引擎 (即用即毁模式) =================
+# ================= 🕷️ 爬虫引擎 (修复版) =================
 def fetch_raw_data():
-    # 延迟导入，减少启动时的内存压力
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     
@@ -61,17 +57,15 @@ def fetch_raw_data():
     options.add_argument("--disable-dev-shm-usage") 
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-extensions") 
-    options.add_argument("--blink-settings=imagesEnabled=false") # 不加载图片，极速
+    options.add_argument("--blink-settings=imagesEnabled=false")
     
     driver = None
     try:
-        # 1. 启动
         driver = webdriver.Chrome(options=options)
         driver.set_page_load_timeout(20)
         
-        # 2. 抓取
         driver.get("https://opinionanalytics.xyz/activity")
-        time.sleep(2.5) # 给一点点时间渲染 JS
+        time.sleep(2.5) 
         
         new_items = []
         rows = driver.find_elements("css selector", "table tbody tr")
@@ -99,12 +93,11 @@ def fetch_raw_data():
     except Exception:
         return pd.DataFrame()
     finally:
-        # 3. 销毁 (关键步骤)
         if driver:
             try: driver.quit()
             except: pass
         del driver
-        gc.collect() # 强制通知系统回收内存
+        gc.collect()
 
 # ================= 🧠 主逻辑 =================
 
@@ -120,18 +113,16 @@ st.markdown(f"""
 if 'pool' not in st.session_state: st.session_state.pool = pd.DataFrame()
 if 'ranks' not in st.session_state: st.session_state.ranks = {}
 
-# 3. 自动执行抓取 (无按钮，直接跑)
-# 使用 spinner 只要一瞬间，不会一直转圈
+# 3. 自动执行抓取
 with st.empty():
     new_df = fetch_raw_data()
     
 if not new_df.empty:
     p = pd.concat([st.session_state.pool, new_df]).drop_duplicates(subset=['unique_key'], keep='last')
     p['ScrapeTime'] = pd.to_datetime(p['ScrapeTime'])
-    # 保持最近30分钟数据，防止内存无限增长
     st.session_state.pool = p[p['ScrapeTime'] > (datetime.now() - timedelta(minutes=30))]
 
-# 4. 渲染界面 (恢复经典三列/Tabs布局)
+# 4. 渲染界面
 t1, t2, t3, t4 = st.tabs(["⚡ 1 分钟", "🌊 10 分钟", "💎 30 分钟", "🚨 异动预警"])
 
 def render(min_val, tab, key):
@@ -154,6 +145,72 @@ def render(min_val, tab, key):
         ).reset_index().sort_values(['Count', 'Total'], ascending=False).reset_index(drop=True)
         agg.index += 1
         
-        # 多空比逻辑
+        # 多空比逻辑 (修复了这里的 SyntaxError)
         try:
             total_map = sub.groupby(['Event', 'Market'])['Amount'].sum()
+            long_map = sub[sub['Side'].isin(['BUY', 'YES'])].groupby(['Event', 'Market'])['Amount'].sum()
+            agg['LongRatio'] = agg.apply(lambda r: (long_map.get((r['Event'], r['Market']), 0) / total_map.get((r['Event'], r['Market']), 1)), axis=1)
+        except Exception: 
+            agg['LongRatio'] = 0.5
+        
+        # 趋势逻辑
+        trends = []
+        curr_ranks = {}
+        hist = st.session_state.ranks.get(key, {})
+        for r, row in agg.iterrows():
+            k = f"{row['Event']}_{row['Market']}"
+            curr_ranks[k] = r
+            trends.append("🔥" if k not in hist else ("⬆️" if hist[k] > r else ("⬇️" if hist[k] < r else "➖")))
+        agg['Trend'] = trends
+        st.session_state.ranks[key] = curr_ranks
+
+        # 渲染表格
+        st.dataframe(
+            agg.style.format({"Total": "${:,.0f}", "AvgPrice": "{:.1f}%"}), 
+            use_container_width=True, 
+            height=600,
+            column_config={
+                "LongRatio": st.column_config.ProgressColumn("多空 (绿多)", min_value=0, max_value=1),
+                "Trend": st.column_config.TextColumn("趋势", width="small"),
+                "Count": st.column_config.ProgressColumn("热度", max_value=int(agg['Count'].max()*1.2) if not agg.empty else 100),
+                "Event": st.column_config.TextColumn("事件", width="large")
+            }
+        )
+
+render(1, t1, "1m")
+render(10, t2, "10m")
+render(30, t3, "30m")
+
+with t4:
+    if not st.session_state.pool.empty:
+        alerts_found = False
+        for n, g in st.session_state.pool.groupby(['Event', 'Market', 'Side']):
+            if len(g) < 2: continue
+            g = g.sort_values('ScrapeTime')
+            diff = g.iloc[-1]['Price'] - g.iloc[0]['Price']
+            if abs(diff) >= 5:
+                alerts_found = True
+                lvl = 30 if abs(diff)>=30 else (10 if abs(diff)>=10 else 5)
+                color = "#ef4444" if diff < 0 else "#22c55e"
+                arrow = "📉" if diff < 0 else "📈"
+                st.markdown(
+                    f"<div class='alert-card level-{lvl}'>"
+                    f"<span style='color:#888'>{n[1]}</span><br>"
+                    f"<b>{n[0]}</b> ({n[2]})<br>"
+                    f"<span style='color:{color}; font-weight:bold'>{arrow} {diff:+.1f}%</span> "
+                    f"<span style='font-size:12px; opacity:0.7'>({g.iloc[0]['Price']:.0f}% -> {g.iloc[-1]['Price']:.0f}%)</span>"
+                    f"</div>", 
+                    unsafe_allow_html=True
+                )
+        if not alerts_found:
+            st.caption("暂无剧烈波动")
+
+# 5. 自动循环
+progress_text = "系统冷却中..."
+my_bar = st.progress(0, text=progress_text)
+
+for percent_complete in range(100):
+    time.sleep(REFRESH_RATE / 100)
+    my_bar.progress(percent_complete + 1, text=f"系统冷却中... {int((1 - (percent_complete+1)/100) * REFRESH_RATE)}s")
+
+st.rerun()
